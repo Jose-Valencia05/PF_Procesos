@@ -1,0 +1,15 @@
+métrica,valor
+n,875.0
+media_lambda,114.09828571428571
+varianza,164.70119706122452
+desviacion_estandar,12.833596419602127
+minimo,75.0
+maximo,157.0
+asimetria,-0.06575510213293033
+curtosis,0.09769140320137248
+ratio_varianza_media,1.443502818908725
+chi2_estadistico,135.17862667510153
+chi2_p_valor,3.1404247911126424e-10
+chi2_gl,47.0
+ks_estadistico,0.07123502993075148
+ks_p_valor_mc,0.0025
