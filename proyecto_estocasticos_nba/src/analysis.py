@@ -358,7 +358,7 @@ def simular_poisson(lambda_est, n, seed=42):
     return rng.poisson(lam=lambda_est, size=n)
 
 
-def graficar_histograma_comparativo(puntos_reales, lambda_est, puntos_simulados,
+def graficar_histograma_comparativo(puntos_reales, lambda_est, puntos_simulados=None,
                                      equipo="Equipo", plots_dir=None):
     """
     Genera un histograma comparativo: datos reales + PMF teórica + simulación.
@@ -381,7 +381,10 @@ def graficar_histograma_comparativo(puntos_reales, lambda_est, puntos_simulados,
     str
         Ruta del archivo guardado.
     """
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    ncols = 2 if puntos_simulados is not None else 1
+    fig, axes = plt.subplots(1, ncols, figsize=(16 if ncols == 2 else 10, 6))
+    if ncols == 1:
+        axes = [axes]
 
     # --- Panel izquierdo: Reales + PMF teórica ---
     ax = axes[0]
@@ -391,37 +394,55 @@ def graficar_histograma_comparativo(puntos_reales, lambda_est, puntos_simulados,
     bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
 
     ax.hist(p_real, bins=bins, density=True, alpha=0.65, color="#2196F3",
-            edgecolor="white", linewidth=0.5, label="Datos reales")
+            edgecolor="white", linewidth=0.5, label="Frecuencia real")
 
     x_pmf, y_pmf = poisson_pmf_teorica(lambda_est, x_min=min_val, x_max=max_val)
     ax.plot(x_pmf, y_pmf, "o-", color="#D32F2F", linewidth=2, markersize=4,
-            label=f"Poisson teórica (lambda={lambda_est:.1f})")
+            label=f"PMF Poisson(λ={lambda_est:.1f})")
 
     ax.axvline(lambda_est, color="#D32F2F", linestyle="--", alpha=0.5,
                label=f"Media = {lambda_est:.1f}")
     ax.set_xlabel("Puntos por partido")
     ax.set_ylabel("Densidad de probabilidad")
-    ax.set_title(f"Datos Reales vs Poisson Teórica — {equipo}")
+    ax.set_title(f"Datos Reales vs Distribución Poisson Teórica")
     ax.legend(loc="upper right")
     ax.yaxis.set_major_locator(MaxNLocator(integer=False))
 
-    # --- Panel derecho: Reales vs Simulados ---
-    ax = axes[1]
-    p_sim = np.array(puntos_simulados).astype(int)
-    both = np.concatenate([p_real, p_sim])
-    min_all = both.min()
-    max_all = both.max()
-    bins_all = np.arange(min_all - 0.5, max_all + 1.5, 1)
+    ax.text(0.98, 0.95,
+            f"λ estimado = {lambda_est:.2f}\n"
+            f"n = {len(p_real)} partidos\n"
+            f"Media real = {np.mean(p_real):.2f}\n"
+            f"Varianza real = {np.var(p_real):.2f}",
+            transform=ax.transAxes, fontsize=9, verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
 
-    ax.hist(p_real, bins=bins_all, density=True, alpha=0.55, color="#2196F3",
-            edgecolor="white", linewidth=0.5, label="Datos reales")
-    ax.hist(p_sim, bins=bins_all, density=True, alpha=0.45, color="#FF9800",
-            edgecolor="white", linewidth=0.5, label="Simulación Poisson")
+    # --- Panel derecho: solo si hay simulacion ---
+    if puntos_simulados is not None:
+        ax = axes[1]
+        p_sim = np.array(puntos_simulados).astype(int)
+        both = np.concatenate([p_real, p_sim])
+        min_all = both.min()
+        max_all = both.max()
+        bins_all = np.arange(min_all - 0.5, max_all + 1.5, 1)
 
-    ax.set_xlabel("Puntos por partido")
-    ax.set_ylabel("Densidad de probabilidad")
-    ax.set_title(f"Reales vs Simulados (Poisson, lambda={lambda_est:.1f}) — {equipo}")
-    ax.legend(loc="upper right")
+        ax.hist(p_real, bins=bins_all, density=True, alpha=0.55, color="#2196F3",
+                edgecolor="white", linewidth=0.5, label="Frecuencia real")
+        ax.hist(p_sim, bins=bins_all, density=True, alpha=0.45, color="#FF9800",
+                edgecolor="white", linewidth=0.5, label=f"Simulacion (n={len(p_sim)})")
+
+        ax.set_xlabel("Puntos por partido")
+        ax.set_ylabel("Densidad de probabilidad")
+        ax.set_title(f"Datos Reales vs Simulacion Monte Carlo")
+        ax.legend(loc="upper right")
+
+        ax.text(0.98, 0.95,
+                "La simulacion genera partidos sinteticos\n"
+                "usando Poisson(lambda). Si las barras se parecen,\n"
+                "el modelo es adecuado.",
+                transform=ax.transAxes, fontsize=9, verticalalignment="top",
+                horizontalalignment="right",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
 
     plt.tight_layout()
 
@@ -473,9 +494,23 @@ def graficar_qq_poisson(puntos_reales, lambda_est, equipo="Equipo", plots_dir=No
 
     ax.set_xlabel("Cuantiles teóricos (Poisson)")
     ax.set_ylabel("Cuantiles observados")
-    ax.set_title(f"Q-Q Plot Poisson — {equipo} (lambda={lambda_est:.1f})")
+    ax.set_title(f"Q-Q Plot: Cuantiles Observados vs Cuantiles Teóricos Poisson")
     ax.legend(loc="upper left")
     ax.set_aspect("equal")
+
+    ax.text(0.02, 0.95,
+            "Si los puntos caen sobre la línea roja y=x,\n"
+            "los datos se distribuyen como una Poisson.\n"
+            "Desviaciones en las colas indican diferencias.",
+            transform=ax.transAxes, fontsize=9, verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    ax.text(0.98, 0.10,
+            f"λ = {lambda_est:.2f}\n"
+            f"n = {n} partidos",
+            transform=ax.transAxes, fontsize=10, verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
 
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
@@ -527,6 +562,87 @@ def graficar_serie_temporal(df, equipo="Equipo", plots_dir=None):
     if plots_dir:
         os.makedirs(plots_dir, exist_ok=True)
     filepath = os.path.join(plots_dir, "serie_temporal_puntos.png")
+    fig.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Gráfica guardada: {filepath}")
+    return filepath
+
+
+def graficar_cdf_escalonada(puntos_reales, lambda_est, equipo="Equipo",
+                            plots_dir=None):
+    """
+    Genera la CDF empírica escalonada vs la CDF teórica de Poisson.
+
+    La línea roja punteada es la CDF teórica de Poisson(lambda).
+    Los escalones azules son la CDF empírica de los datos reales.
+    Mientras más se traslapen, mejor es el ajuste.
+
+    Parameters
+    ----------
+    puntos_reales : array-like
+        Puntos reales por partido.
+    lambda_est : float
+        Lambda estimado de la distribución de Poisson.
+    equipo : str
+        Nombre del equipo para el título.
+    plots_dir : str, optional
+        Directorio donde guardar la gráfica.
+
+    Returns
+    -------
+    str
+        Ruta del archivo guardado.
+    """
+    p_real = np.array(puntos_reales)
+    n = len(p_real)
+    p_sorted = np.sort(p_real)
+
+    cdf_empirica = np.arange(1, n + 1) / n
+
+    x_min = p_sorted[0]
+    x_max = p_sorted[-1]
+    x_theo = np.arange(x_min, x_max + 1)
+    cdf_teorica = poisson.cdf(x_theo, mu=lambda_est)
+
+    max_diff = np.max(np.abs(
+        np.searchsorted(p_sorted, x_theo, side="right") / n - cdf_teorica
+    ))
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    ax.step(p_sorted, cdf_empirica, where="post", color="#2196F3",
+             linewidth=2, label="CDF empírica (datos reales)")
+
+    ax.plot(x_theo, cdf_teorica, "o--", color="#D32F2F", linewidth=2,
+             markersize=5, label=f"CDF teórica Poisson (λ={lambda_est:.1f})")
+
+    ax.set_xlabel("Puntos por partido")
+    ax.set_ylabel("Probabilidad acumulada")
+    ax.set_title(
+        f"Función de Distribución Acumulada (CDF) — {equipo}"
+    )
+    ax.legend(loc="lower right")
+
+    ax.text(0.02, 0.95,
+            "La línea roja punteada es la CDF teórica de Poisson(λ).\n"
+            "Los escalones azules son la CDF empírica de los datos reales.\n"
+            "Mientras más se traslapen, mejor es el ajuste.",
+            transform=ax.transAxes, fontsize=9, verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    ax.text(0.98, 0.20,
+            f"λ = {lambda_est:.2f}\n"
+            f"n = {n} partidos\n"
+            f"Diferencia máxima = {max_diff:.4f}",
+            transform=ax.transAxes, fontsize=10, verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
+
+    plt.tight_layout()
+
+    if plots_dir:
+        os.makedirs(plots_dir, exist_ok=True)
+    filepath = os.path.join(plots_dir, "cdf_poisson.png")
     fig.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Gráfica guardada: {filepath}")
@@ -645,8 +761,26 @@ def graficar_media_varianza_por_temporada(df, equipo="Equipo", plots_dir=None):
     ax.set_xticklabels(agg.index, rotation=45, ha="right", fontsize=9)
     ax.set_xlabel("Temporada")
     ax.set_ylabel("Puntos")
-    ax.set_title(f"Media y Varianza de Puntos por Temporada — {equipo}")
+    ax.set_title(f"Estabilidad de λ por Temporada — {equipo}")
     ax.legend(loc="upper left")
+
+    ratio_global = df[pts_col].var() / df[pts_col].mean()
+
+    ax.text(0.98, 0.95,
+            "En una Poisson, E[X] = Var(X) = λ.\n"
+            "Este gráfico verifica si λ se mantiene estable\n"
+            "a lo largo de las temporadas. Las líneas deben\n"
+            "estar cerca y ser horizontales.",
+            transform=ax.transAxes, fontsize=9, verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    ax.text(0.02, 0.20,
+            f"Media global = {df[pts_col].mean():.2f}\n"
+            f"Varianza global = {df[pts_col].var():.2f}\n"
+            f"Razón Var/Media = {ratio_global:.4f}",
+            transform=ax.transAxes, fontsize=10, verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
 
     plt.tight_layout()
 
@@ -659,9 +793,252 @@ def graficar_media_varianza_por_temporada(df, equipo="Equipo", plots_dir=None):
     return filepath
 
 
-def resumen_estadistico(stats_dict, propiedad, chi2_result, ks_result):
+def identificar_eventos_y_tiempos(puntos, lambda_est, factor=1.0):
     """
-    Genera un resumen de todos los resultados estadísticos en formato
+    Define un 'evento' como un partido donde los puntos superan
+    lambda + factor * desviacion. Calcula los tiempos entre eventos
+    consecutivos.
+
+    Parameters
+    ----------
+    puntos : array-like
+        Puntos por partido.
+    lambda_est : float
+        Lambda estimado (media).
+    factor : float
+        Multiplicador de la desviacion para definir el umbral.
+
+    Returns
+    -------
+    tuple
+        (tiempos_entre_eventos, umbral, n_eventos)
+    """
+    p = np.array(puntos)
+    desv = np.std(p)
+    umbral = lambda_est + factor * desv
+
+    indices_eventos = np.where(p > umbral)[0]
+
+    if len(indices_eventos) < 2:
+        return np.array([]), umbral, len(indices_eventos)
+
+    tiempos = np.diff(indices_eventos)
+    return tiempos, umbral, len(indices_eventos)
+
+
+def graficar_qq_exponencial(tiempos_entre_eventos, lambda_exp, umbral,
+                            equipo="Equipo", plots_dir=None):
+    """
+    Genera un Q-Q plot para evaluar si los tiempos entre eventos
+    siguen una distribucion exponencial.
+
+    Parameters
+    ----------
+    tiempos_entre_eventos : array-like
+        Tiempos (en partidos) entre eventos consecutivos.
+    lambda_exp : float
+        Parametro lambda de la exponencial (1/media).
+    umbral : float
+        Umbral usado para definir un evento.
+    equipo : str
+        Nombre del equipo.
+    plots_dir : str, optional
+        Directorio donde guardar la grafica.
+
+    Returns
+    -------
+    str
+        Ruta del archivo guardado.
+    """
+    if len(tiempos_entre_eventos) < 5:
+        print("  Muy pocos eventos para Q-Q exponencial. Se omite.")
+        return None
+
+    t = np.array(tiempos_entre_eventos)
+    n_t = len(t)
+    t_sorted = np.sort(t)
+    theoretical = stats.expon.ppf((np.arange(1, n_t + 1) - 0.5) / n_t,
+                                   scale=1.0 / lambda_exp)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    ax.scatter(theoretical, t_sorted, alpha=0.5, color="#4CAF50",
+               edgecolors="white", linewidth=0.3, s=50)
+    ax.plot(theoretical, theoretical, "--", color="#D32F2F",
+            linewidth=2, label="Linea de referencia (y = x)")
+
+    ax.set_xlabel("Cuantiles teoricos (Exponencial)")
+    ax.set_ylabel("Cuantiles observados")
+    ax.set_title(
+        "Q-Q Plot Exponencial: Tiempos entre Eventos de Altos Puntos"
+    )
+    ax.legend(loc="upper left")
+
+    ax.text(0.02, 0.95,
+            "Un evento es un partido donde los puntos\n"
+            f"superan el umbral = media + desviacion = {umbral:.1f}.\n"
+            "Si los puntos caen sobre la linea y=x,\n"
+            "los tiempos entre eventos siguen una Exponencial.",
+            transform=ax.transAxes, fontsize=9, verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85))
+
+    ax.text(0.98, 0.10,
+            f"lambda_exp = {lambda_exp:.4f}\n"
+            f"media obs = {np.mean(t):.2f} partidos\n"
+            f"n eventos = {n_t}",
+            transform=ax.transAxes, fontsize=10, verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
+
+    plt.tight_layout()
+
+    if plots_dir:
+        os.makedirs(plots_dir, exist_ok=True)
+    filepath = os.path.join(plots_dir, "qq_exponencial.png")
+    fig.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Grafica guardada: {filepath}")
+    return filepath
+
+
+def prueba_estacionariedad(puntos):
+    """
+    Realiza pruebas formales de estacionariedad sobre la serie de puntos:
+    - ADF (Augmented Dickey-Fuller): H0 = no estacionaria (raiz unitaria)
+    - KPSS: H0 = estacionaria
+
+    Parameters
+    ----------
+    puntos : array-like
+        Serie de puntos por partido.
+
+    Returns
+    -------
+    dict
+        Resultados de las pruebas ADF y KPSS.
+    """
+    try:
+        from statsmodels.tsa.stattools import adfuller, kpss
+    except ImportError:
+        return {
+            "adf_estadistico": None,
+            "adf_p_valor": None,
+            "adf_conclusion": "statsmodels no instalado.",
+            "kpss_estadistico": None,
+            "kpss_p_valor": None,
+            "kpss_conclusion": "statsmodels no instalado.",
+        }
+
+    p = np.array(puntos, dtype=float)
+
+    adf_result = adfuller(p, autolag="AIC")
+    adf_stat = adf_result[0]
+    adf_p = adf_result[1]
+    adf_conc = (
+        "Serie ESTACIONARIA (rechaza H0 de raiz unitaria)"
+        if adf_p < 0.05 else
+        "Serie NO estacionaria (no rechaza H0)"
+    )
+
+    kpss_result = kpss(p, regression="c", nlags="auto")
+    kpss_stat = kpss_result[0]
+    kpss_p = kpss_result[1]
+    kpss_conc = (
+        "Serie ESTACIONARIA (no rechaza H0)"
+        if kpss_p >= 0.05 else
+        "Serie NO estacionaria (rechaza H0 de estacionariedad)"
+    )
+
+    return {
+        "adf_estadistico": adf_stat,
+        "adf_p_valor": adf_p,
+        "adf_conclusion": adf_conc,
+        "kpss_estadistico": kpss_stat,
+        "kpss_p_valor": kpss_p,
+        "kpss_conclusion": kpss_conc,
+    }
+
+
+def analizar_poisson_no_homogeneo(df):
+    """
+    Compara el modelo Poisson homogeneo (lambda unico)
+    vs no homogeneo (lambda varia por local/visitante).
+
+    Calcula lambda para partidos en casa (vs.) y fuera (@)
+    y evalua cual modelo ajusta mejor via AIC.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame con columnas 'enfrentamiento' y 'puntos'.
+
+    Returns
+    -------
+    dict
+        Resultados de la comparacion.
+    """
+    pts_col = "puntos" if "puntos" in df.columns else "PTS"
+    matchup_col = "enfrentamiento" if "enfrentamiento" in df.columns else "MATCHUP"
+    puntos = df[pts_col].values.astype(float)
+
+    if matchup_col not in df.columns:
+        return {
+            "lambda_global": np.mean(puntos),
+            "lambda_local": None,
+            "lambda_visitante": None,
+            "aic_homogeneo": None,
+            "aic_no_homogeneo": None,
+            "conclusion": "Sin datos de local/visitante.",
+        }
+
+    mask_local = df[matchup_col].str.contains("vs\\.", case=False, na=False)
+    mask_visitante = df[matchup_col].str.contains("@", case=False, na=False)
+
+    lambda_global = np.mean(puntos)
+    lambda_local = np.mean(puntos[mask_local]) if mask_local.sum() > 0 else lambda_global
+    lambda_visitante = np.mean(puntos[mask_visitante]) if mask_visitante.sum() > 0 else lambda_global
+
+    ll_homogeneo = np.sum(poisson.logpmf(puntos, mu=lambda_global))
+    k_hom = 1
+    aic_hom = 2 * k_hom - 2 * ll_homogeneo
+
+    ll_no_hom = 0
+    k_no_hom = 2
+
+    if mask_local.sum() > 0:
+        ll_no_hom += np.sum(poisson.logpmf(puntos[mask_local], mu=lambda_local))
+    if mask_visitante.sum() > 0:
+        ll_no_hom += np.sum(poisson.logpmf(puntos[mask_visitante], mu=lambda_visitante))
+
+    aic_no_hom = 2 * k_no_hom - 2 * ll_no_hom
+
+    if aic_hom < aic_no_hom:
+        conclusion = (
+            "El modelo HOMOGENEO tiene mejor AIC. "
+            "No hay evidencia suficiente de que lambda varie por local/visitante."
+        )
+    else:
+        conclusion = (
+            "El modelo NO HOMOGENEO tiene mejor AIC. "
+            "Lambda varia significativamente entre partidos de local y visitante."
+        )
+
+    return {
+        "lambda_global": lambda_global,
+        "lambda_local": lambda_local,
+        "lambda_visitante": lambda_visitante,
+        "n_local": int(mask_local.sum()),
+        "n_visitante": int(mask_visitante.sum()),
+        "aic_homogeneo": aic_hom,
+        "aic_no_homogeneo": aic_no_hom,
+        "conclusion": conclusion,
+    }
+
+
+def resumen_estadistico(stats_dict, propiedad, estacionariedad=None,
+                       no_homogeneo=None):
+    """
+    Genera un resumen de todos los resultados estadisticos en formato
     de diccionario, listo para mostrar o exportar.
 
     Parameters
@@ -670,22 +1047,25 @@ def resumen_estadistico(stats_dict, propiedad, chi2_result, ks_result):
         Resultado de estadistica_descriptiva().
     propiedad : dict
         Resultado de verificar_propiedad_poisson().
-    chi2_result : dict
-        Resultado de prueba_chi_cuadrada().
-    ks_result : dict
-        Resultado de prueba_ks().
+    estacionariedad : dict, optional
+        Resultado de prueba_estacionariedad().
+    no_homogeneo : dict, optional
+        Resultado de analizar_poisson_no_homogeneo().
 
     Returns
     -------
     dict
-        Resumen completo del análisis.
+        Resumen completo del analisis.
     """
-    return {
+    result = {
         "estadistica_descriptiva": stats_dict,
         "propiedad_poisson": propiedad,
-        "prueba_chi_cuadrada": chi2_result,
-        "prueba_kolmogorov_smirnov": ks_result,
     }
+    if estacionariedad is not None:
+        result["estacionariedad"] = estacionariedad
+    if no_homogeneo is not None:
+        result["poisson_no_homogeneo"] = no_homogeneo
+    return result
 
 
 def imprimir_resumen(resumen):
@@ -699,134 +1079,141 @@ def imprimir_resumen(resumen):
     """
     sd = resumen["estadistica_descriptiva"]
     pp = resumen["propiedad_poisson"]
-    chi2 = resumen["prueba_chi_cuadrada"]
-    ks = resumen["prueba_kolmogorov_smirnov"]
 
     print(f"\n{'='*60}")
-    print(f"  RESUMEN DEL ANÁLISIS ESTADÍSTICO")
+    print(f"  RESUMEN DEL ANALISIS ESTADISTICO")
     print(f"{'='*60}")
 
-    print(f"\n  --- Estadística Descriptiva ---")
+    print(f"\n  --- Estadistica Descriptiva ---")
     print(f"  Partidos analizados (n):    {sd['n']}")
     print(f"  Media muestral (lambda):    {sd['media']:.2f}")
     print(f"  Varianza muestral:          {sd['varianza']:.2f}")
-    print(f"  Desviación estándar:        {sd['desviacion_estandar']:.2f}")
-    print(f"  Mínimo:                     {sd['minimo']:.0f}")
-    print(f"  Máximo:                     {sd['maximo']:.0f}")
-    print(f"  Asimetría:                  {sd['asimetria']:.3f}")
+    print(f"  Desviacion estandar:        {sd['desviacion_estandar']:.2f}")
+    print(f"  Minimo:                     {sd['minimo']:.0f}")
+    print(f"  Maximo:                     {sd['maximo']:.0f}")
+    print(f"  Asimetria:                  {sd['asimetria']:.3f}")
     print(f"  Curtosis:                   {sd['curtosis']:.3f}")
 
     print(f"\n  --- Propiedad E[X] = Var(X) = lambda ---")
-    print(f"  Razón Var(X)/E[X]:          {pp['ratio_varianza_media']:.4f}")
+    print(f"  Razon Var(X)/E[X]:          {pp['ratio_varianza_media']:.4f}")
     print(f"  Diferencia relativa:        {pp['diferencia_relativa']:.4f}")
-    print(f"  Diagnóstico:                {pp['diagnostico']}")
+    print(f"  Diagnostico:                {pp['diagnostico']}")
 
-    print(f"\n  --- Prueba Chi-Cuadrada (alpha = {chi2['nivel_significancia']}) ---")
-    print(f"  Estadístico chi2:           {chi2['estadistico_chi2']:.3f}")
-    print(f"  Grados de libertad:         {chi2['grados_libertad']}")
-    print(f"  P-valor:                    {chi2['p_valor']:.4f}")
-    print(f"  Conclusión:                 {chi2['conclusion']}")
+    est = resumen.get("estacionariedad")
+    if est and est.get("adf_estadistico") is not None:
+        print(f"\n  --- Pruebas de Estacionariedad ---")
+        print(f"  ADF estadistico:            {est['adf_estadistico']:.4f}")
+        print(f"  ADF p-valor:                {est['adf_p_valor']:.4f}")
+        print(f"  ADF conclusion:             {est['adf_conclusion']}")
+        print(f"  KPSS estadistico:           {est['kpss_estadistico']:.4f}")
+        print(f"  KPSS p-valor:               {est['kpss_p_valor']:.4f}")
+        print(f"  KPSS conclusion:            {est['kpss_conclusion']}")
 
-    print(f"\n  --- Prueba Kolmogorov-Smirnov (alpha = {ks['nivel_significancia']}) ---")
-    print(f"  Estadístico KS:             {ks['estadistico_ks']:.4f}")
-    print(f"  P-valor Monte Carlo:        {ks['p_valor_monte_carlo']:.4f}")
-    print(f"  Simulaciones MC:            {ks['n_simulaciones']}")
-    print(f"  Conclusión:                 {ks['conclusion']}")
+    nh = resumen.get("poisson_no_homogeneo")
+    if nh and nh.get("aic_homogeneo") is not None:
+        print(f"\n  --- Poisson Homogeneo vs No Homogeneo ---")
+        print(f"  lambda global:              {nh['lambda_global']:.2f}")
+        print(f"  lambda local (casa):        {nh['lambda_local']:.2f}")
+        print(f"  lambda visitante (fuera):   {nh['lambda_visitante']:.2f}")
+        print(f"  Partidos local:             {nh['n_local']}")
+        print(f"  Partidos visitante:         {nh['n_visitante']}")
+        print(f"  AIC homogeneo:              {nh['aic_homogeneo']:.2f}")
+        print(f"  AIC no homogeneo:           {nh['aic_no_homogeneo']:.2f}")
+        print(f"  Conclusion:                 {nh['conclusion']}")
 
     print(f"\n{'='*60}")
-    print(f"  CONCLUSIÓN FINAL")
+    print(f"  CONCLUSION FINAL")
     print(f"{'='*60}")
 
-    rechazos = 0
-    if chi2.get("rechazar_h0"):
-        rechazos += 1
-    if ks.get("rechazar_h0"):
-        rechazos += 1
-
-    if rechazos == 0:
-        print("  Ambas pruebas estadísticas indican que los datos pueden")
-        print("  modelarse adecuadamente mediante un proceso de Poisson.")
-        print("  El modelo Poisson es una aproximación razonable para")
+    if pp['diferencia_relativa'] < 0.10:
+        print("  La propiedad E[X] = Var(X) se cumple adecuadamente.")
+        print("  Los datos pueden modelarse mediante un proceso de Poisson.")
+        print("  El modelo Poisson es una aproximacion razonable para")
         print("  los puntos anotados por partido de este equipo.")
-    elif rechazos == 1:
-        print("  Los resultados son mixtos. Una prueba rechaza H0 y la")
-        print("  otra no. Se recomienda explorar modelos alternativos como")
-        print("  la distribución binomial negativa (para sobredispersión).")
+    elif pp['diferencia_relativa'] < 0.25:
+        print("  La propiedad E[X] = Var(X) muestra una desviacion leve.")
+        print("  El modelo Poisson es aceptable, aunque se recomienda")
+        print("  revisar las graficas CDF y Q-Q para confirmar el ajuste.")
     else:
-        print("  Ambas pruebas rechazan la hipótesis nula. Los datos NO")
-        print("  siguen una distribución de Poisson. Se recomienda explorar")
-        print("  modelos alternativos (binomial negativa, Poisson compuesto).")
+        print("  La propiedad E[X] = Var(X) presenta desviacion.")
+        print("  Se recomienda explorar modelos alternativos como")
+        print("  la distribucion binomial negativa (sobredispersion).")
 
     print(f"{'='*60}\n")
 
 
 def analyze(df, equipo="Warriors", plots_dir=None, seed=42):
     """
-    Función principal del módulo de análisis.
-    Ejecuta el pipeline completo de análisis Poisson.
+    Funcion principal del modulo de analisis.
+    Ejecuta el pipeline completo de analisis Poisson, exponencial,
+    estacionariedad y Poisson no homogeneo.
 
     Parameters
     ----------
     df : pandas.DataFrame
         DataFrame limpio con columna 'puntos'.
     equipo : str
-        Nombre del equipo para títulos de gráficas.
+        Nombre del equipo para titulos de graficas.
     plots_dir : str, optional
-        Directorio donde guardar las gráficas.
+        Directorio donde guardar las graficas.
     seed : int
-        Semilla para reproducibilidad de simulaciones.
+        Semilla para reproducibilidad (reservado).
 
     Returns
     -------
     tuple
-        (resumen dict, stats_dict, propiedad dict, chi2 dict, ks dict)
+        (resumen dict, stats_dict, propiedad dict, estacionariedad dict,
+         no_homogeneo dict, exp_result dict)
     """
     print(f"\n{'='*60}")
-    print(f"  ANÁLISIS DE POISSON — {equipo}")
+    print(f"  ANALISIS DE POISSON — {equipo}")
     print(f"{'='*60}")
 
     pts_col = "puntos" if "puntos" in df.columns else "PTS"
     puntos = df[pts_col].values.astype(float)
 
-    # 1. Estadística descriptiva
-    print("\n  [1/7] Estadística descriptiva...")
+    # 1. Estadistica descriptiva
+    print("\n  [1/6] Estadistica descriptiva...")
     stats_dict = estadistica_descriptiva(puntos)
     lambda_est = stats_dict["lambda_estimado"]
     n = stats_dict["n"]
 
     # 2. Verificar propiedad
-    print("  [2/7] Verificando E[X] = Var(X)...")
+    print("  [2/6] Verificando E[X] = Var(X)...")
     propiedad = verificar_propiedad_poisson(stats_dict)
 
-    # 3. Ajuste Poisson (PMF teórica)
-    print("  [3/7] Ajustando distribución de Poisson...")
-    x_pmf, y_pmf = poisson_pmf_teorica(lambda_est)
+    # 3. Estacionariedad formal
+    print("  [3/6] Pruebas de estacionariedad (ADF, KPSS)...")
+    estacionariedad = prueba_estacionariedad(puntos)
 
-    # 4. Prueba Chi-cuadrada
-    print("  [4/7] Prueba de bondad de ajuste Chi-cuadrada...")
-    chi2_result = prueba_chi_cuadrada(puntos, lambda_est)
+    # 4. Poisson no homogeneo
+    print("  [4/6] Comparando Poisson homogeneo vs no homogeneo...")
+    no_homogeneo = analizar_poisson_no_homogeneo(df)
 
-    # 5. Prueba KS
-    print("  [5/7] Prueba de Kolmogorov-Smirnov (Monte Carlo)...")
-    ks_result = prueba_ks(puntos, lambda_est)
+    # 5. Tiempos entre eventos (exponencial)
+    print("  [5/6] Identificando tiempos entre eventos...")
+    tiempos, umbral, n_eventos = identificar_eventos_y_tiempos(puntos, lambda_est)
+    exp_result = {"tiempos": tiempos, "umbral": umbral, "n_eventos": n_eventos}
+    if len(tiempos) >= 2:
+        lambda_exp = 1.0 / np.mean(tiempos)
+        exp_result["lambda_exp"] = lambda_exp
+        exp_result["media_tiempos"] = np.mean(tiempos)
+    else:
+        exp_result["lambda_exp"] = None
+        exp_result["media_tiempos"] = None
 
-    # 6. Simulación
-    print("  [6/7] Simulando datos con Poisson...")
-    puntos_sim = simular_poisson(lambda_est, n, seed=seed)
-
-    # 7. Gráficas
-    print("  [7/7] Generando gráficas...")
+    # 6. Graficas
+    print("  [6/6] Generando graficas...")
     if plots_dir is None:
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         plots_dir = os.path.join(base, "plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    graficar_histograma_comparativo(puntos, lambda_est, puntos_sim,
+    graficar_histograma_comparativo(puntos, lambda_est, None,
                                      equipo=equipo, plots_dir=plots_dir)
     graficar_qq_poisson(puntos, lambda_est, equipo=equipo, plots_dir=plots_dir)
-    graficar_serie_temporal(df, equipo=equipo, plots_dir=plots_dir)
-    graficar_barras_chi2(chi2_result, lambda_est, n, equipo=equipo,
-                          plots_dir=plots_dir)
+    graficar_cdf_escalonada(puntos, lambda_est, equipo=equipo,
+                             plots_dir=plots_dir)
 
     fecha_col = "fecha" if "fecha" in df.columns else "GAME_DATE"
     if fecha_col in df.columns:
@@ -836,10 +1223,21 @@ def analyze(df, equipo="Warriors", plots_dir=None, seed=42):
         except Exception as e:
             print(f"  (Media/varianza por temporada omitida: {e})")
 
-    resumen = resumen_estadistico(stats_dict, propiedad, chi2_result, ks_result)
+    if len(tiempos) >= 5 and exp_result["lambda_exp"] is not None:
+        graficar_qq_exponencial(tiempos, exp_result["lambda_exp"], umbral,
+                                equipo=equipo, plots_dir=plots_dir)
+    elif len(tiempos) > 0:
+        print(
+            "  Pocos eventos para Q-Q exponencial. "
+            "Se omite."
+        )
+
+    resumen = resumen_estadistico(stats_dict, propiedad,
+                                  estacionariedad=estacionariedad,
+                                  no_homogeneo=no_homogeneo)
     imprimir_resumen(resumen)
 
-    return resumen, stats_dict, propiedad, chi2_result, ks_result
+    return resumen, stats_dict, propiedad, estacionariedad, no_homogeneo, exp_result
 
 
 if __name__ == "__main__":

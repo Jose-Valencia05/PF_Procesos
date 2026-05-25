@@ -206,9 +206,10 @@ def guardar_datos_procesados(df, team_name="warriors", processed_dir=None):
     return filepath
 
 
-def clean(raw_path=None, team_name="warriors", output_dir=None, project_root=None):
+def clean(raw_path=None, team_name="warriors", output_dir=None,
+          project_root=None, seasons=None):
     """
-    Función principal del módulo de limpieza.
+    Funcion principal del modulo de limpieza.
     Ejecuta todo el pipeline de limpieza.
 
     Parameters
@@ -220,7 +221,10 @@ def clean(raw_path=None, team_name="warriors", output_dir=None, project_root=Non
     output_dir : str, optional
         Directorio donde guardar el CSV procesado.
     project_root : str, optional
-        Directorio raíz del proyecto (para localizar el raw por defecto).
+        Directorio raiz del proyecto (para localizar el raw por defecto).
+    seasons : list, optional
+        Lista de temporadas en formato 'YYYY-YY' para filtrar los datos
+        crudos antes de limpiar.
 
     Returns
     -------
@@ -250,6 +254,20 @@ def clean(raw_path=None, team_name="warriors", output_dir=None, project_root=Non
         output_dir = os.path.join(project_root, "data", "processed")
 
     df = cargar_datos_crudos(raw_path)
+
+    if seasons is not None:
+        season_col = None
+        for c in ["SEASON_YEAR", "season_year"]:
+            if c in df.columns:
+                season_col = c
+                break
+        if season_col:
+            mask = df[season_col].isin(seasons)
+            df = df[mask].copy()
+            print(f"  Filtrado a temporadas {seasons}: {len(df)} registros")
+        else:
+            print("  Columna SEASON_YEAR no encontrada, sin filtro por temporada.")
+
     df = filtrar_columnas_relevantes(df)
     df = renombrar(df)
     df = limpiar_nulos(df)
