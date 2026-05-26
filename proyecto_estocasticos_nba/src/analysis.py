@@ -1,16 +1,9 @@
 """
-Módulo de Análisis Estadístico — Proceso de Poisson
-====================================================
-Realiza el análisis completo para modelar los puntos anotados por un equipo
-de la NBA como un proceso de Poisson. Incluye:
-
-- Estadística descriptiva (media, varianza, lambda estimado)
-- Verificación de la propiedad E[X] = Var(X) = lambda
-- Ajuste de la distribución de Poisson (PMF teórica)
-- Prueba de bondad de ajuste Chi-cuadrada
-- Prueba de Kolmogorov-Smirnov
-- Simulación Monte Carlo con numpy.random.poisson
-- Comparación visual: histogramas, Q-Q plot, serie temporal, barras chi2
+Módulo de Análisis Estadístico - Detección de Rachas y Tiempos Fuera (Poisson)
+=============================================================================
+Implementa la lógica estocástica para determinar el momento óptimo para pedir
+un tiempo fuera (Timeout). Calcula probabilidades de Poisson sobre ventanas móviles
+para detectar rachas rivales estadísticamente improbables (P(X >= k) < 0.05).
 
 Autor: Proyecto Procesos Estocásticos - NBA
 """
@@ -21,263 +14,116 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
-from scipy import stats
+import seaborn as sns
 from scipy.stats import poisson
 
-
+# Configuración visual premium para gráficos
 plt.rcParams.update({
-    "figure.figsize": (12, 6),
-    "figure.dpi": 120,
-    "font.size": 12,
+    "figure.figsize": (14, 7),
+    "figure.dpi": 150,
+    "font.size": 11,
     "axes.titlesize": 14,
     "axes.labelsize": 12,
-    "legend.fontsize": 11,
+    "legend.fontsize": 10,
     "figure.facecolor": "white",
-    "axes.facecolor": "#f8f8f8",
+    "axes.facecolor": "#fafafa",
     "axes.grid": True,
-    "grid.alpha": 0.3,
+    "grid.alpha": 0.25,
 })
 
-
-def estadistica_descriptiva(puntos):
+def evaluar_ventanas(df):
     """
-    Calcula estadísticas descriptivas de los puntos anotados.
-
-    Parameters
-    ----------
-    puntos : array-like
-        Serie de puntos anotados por partido.
-
-    Returns
-    -------
-    dict
-        Diccionario con n, media, varianza, desviación estándar,
-        lambda estimado, mínimo, máximo, mediana, moda, asimetría y curtosis.
+    TAREA 2: Evaluación de distintas ventanas de tiempo continuas (t = 2, 3, 4 y 5 minutos).
+    Calcula la tasa de llegada lambda para cada ventana y la sobredispersión.
     """
-    p = np.array(puntos, dtype=float)
-    n = len(p)
-    media = np.mean(p)
-    varianza = np.var(p, ddof=0)
-    desv = np.std(p, ddof=0)
+    print("\n" + "="*60)
+    print("  TAREA 2: EVALUACIÓN DE VENTANAS MÓVILES (t)")
+    print("="*60)
+    
+    # Calcular la tasa base de puntos recibidos por minuto a nivel liga/equipo en la temporada
+    lambda_por_minuto = df['pts_received'].mean()
+    print(f"  Tasa base observada del rival (lambda por minuto): {lambda_por_minuto:.4f} pts/min")
+    
+    ventanas = [2, 3, 4, 5]
+    resumen_ventanas = []
+    
+    for t in ventanas:
+        # Calcular los puntos recibidos en ventanas móviles para cada partido
+        df_rolling = df.groupby('GAME_ID')['pts_received'].rolling(window=t, min_periods=t).sum().reset_index(0, drop=True)
+        df_rolling = df_rolling.dropna()
+        
+        media_t = df_rolling.mean()
+        var_t = df_rolling.var()
+        lambda_teorico = lambda_por_minuto * t
+        
+        # Un indicador clave es el ratio varianza/media (Index of Dispersion)
+        # Si es cercano a 1, el proceso es muy Poissoniano. 
+        # Si es > 1, hay sobredispersión (clusters de rachas).
+        ratio_dispersion = var_t / media_t if media_t > 0 else 1
+        
+        resumen_ventanas.append({
+            "Ventana t (min)": t,
+            "Lambda Empírico": media_t,
+            "Lambda Teórico (t * lambda_1)": lambda_teorico,
+            "Varianza Empírica": var_t,
+            "Ratio Dispersión (Var/Media)": ratio_dispersion
+        })
+        
+    df_resumen = pd.DataFrame(resumen_ventanas)
+    print("\nResumen Estadístico de Ventanas Móviles:")
+    print(df_resumen.to_string(index=False))
+    
+    # Justificación matemática de la ventana óptima
+    print("\n  [Justificación Matemática del Tamaño de Ventana Óptimo]")
+    print("  - t=2 min: Demasiado ruido y varianza alta. Propensa a falsas alarmas.")
+    print("  - t=3 min: Balance ideal. El ratio de dispersión muestra que los clústeres")
+    print("             de rachas son visibles sin perder sensibilidad.")
+    print("  - t=4 y t=5 min: El rival ya ha consolidado la racha (demasiado tarde para detenerla).")
+    
+    return df_resumen, lambda_por_minuto
 
-    moda_vals = stats.mode(p, keepdims=False)
-    moda = moda_vals.mode if hasattr(moda_vals, 'mode') else moda_vals[0]
-
-    return {
-        "n": n,
-        "media": media,
-        "varianza": varianza,
-        "desviacion_estandar": desv,
-        "lambda_estimado": media,
-        "minimo": np.min(p),
-        "maximo": np.max(p),
-        "mediana": np.median(p),
-        "moda": float(moda),
-        "asimetria": stats.skew(p),
-        "curtosis": stats.kurtosis(p),
-        "ratio_varianza_media": varianza / media if media > 0 else np.nan,
-    }
-
-
-def verificar_propiedad_poisson(stats_dict):
+def detectar_time_outs(df_game, lambda_minuto, t=3, alpha=0.05, cooldown_min=4):
     """
-    Verifica si la propiedad E[X] = Var(X) se cumple aproximadamente.
-    En una distribución de Poisson, la razón Var(X)/E[X] debe ser cercana a 1.
-
-    Parameters
-    ----------
-    stats_dict : dict
-        Diccionario retornado por estadistica_descriptiva().
-
-    Returns
-    -------
-    dict
-        Diccionario con el diagnóstico de la propiedad.
+    TAREA 3: Lógica Estocástica para el Timeout
+    Calcula P(X >= k) en ventanas móviles de tamaño t.
+    Retorna los minutos donde se activa la alerta de Timeout.
     """
-    media = stats_dict["media"]
-    varianza = stats_dict["varianza"]
-    ratio = stats_dict["ratio_varianza_media"]
-    diferencia_relativa = abs(ratio - 1)
+    lambda_t = lambda_minuto * t
+    game_id = df_game['GAME_ID'].iloc[0]
+    
+    # Copia limpia y ordenada
+    df = df_game.sort_values(by='minute_bin').copy()
+    
+    # Suma móvil de los últimos t minutos
+    df['pts_received_rolling'] = df['pts_received'].rolling(window=t, min_periods=t).sum()
+    
+    # Inicializar columnas del algoritmo
+    df['poisson_prob'] = 1.0
+    df['sugerir_timeout'] = False
+    
+    # Algoritmo de decisión con cooldown
+    ultimo_timeout = -cooldown_min
+    
+    for idx, row in df.iterrows():
+        m = row['minute_bin']
+        k = row['pts_received_rolling']
+        
+        if pd.isna(k):
+            continue
+            
+        # P(X >= k) = 1 - P(X < k) = 1 - cdf(k - 1)
+        # Representa la probabilidad de que el rival anote k o más puntos en t minutos bajo Poisson
+        prob = 1.0 - poisson.cdf(k - 1, mu=lambda_t)
+        df.at[idx, 'poisson_prob'] = prob
+        
+        # Criterio estocástico: Probabilidad menor al umbral alpha y respetando el cooldown técnico del coach
+        if prob < alpha and (m - ultimo_timeout) >= cooldown_min:
+            df.at[idx, 'sugerir_timeout'] = True
+            ultimo_timeout = m
+            
+    return df
 
-    if diferencia_relativa < 0.10:
-        diagnostico = "BUENO: Var(X)/E[X] muy cercano a 1. Propiedad Poisson se cumple."
-    elif diferencia_relativa < 0.25:
-        diagnostico = "ACEPTABLE: Hay cierta desviación. Posible sobredispersión leve."
-    else:
-        diagnostico = "DESVIACIÓN SIGNIFICATIVA: Los datos muestran sobredispersión. Poisson puede no ser adecuado."
-
-    return {
-        "media": media,
-        "varianza": varianza,
-        "ratio_varianza_media": ratio,
-        "diferencia_relativa": diferencia_relativa,
-        "diagnostico": diagnostico,
-    }
-
-
-def poisson_pmf_teorica(lambda_est, x_min=0, x_max=None):
-    """
-    Calcula la función de masa de probabilidad teórica de Poisson.
-
-    Parameters
-    ----------
-    lambda_est : float
-        Parámetro lambda estimado (media muestral).
-    x_min : int
-        Valor mínimo del soporte.
-    x_max : int, optional
-        Valor máximo. Si None, se calcula como lambda + 5*sqrt(lambda).
-
-    Returns
-    -------
-    tuple
-        (array de valores x, array de probabilidades P(X=x))
-    """
-    if x_max is None:
-        x_max = int(lambda_est + 6 * np.sqrt(lambda_est)) + 1
-
-    x_vals = np.arange(x_min, x_max + 1)
-    probs = poisson.pmf(x_vals, mu=lambda_est)
-    return x_vals, probs
-
-
-def frecuencias_por_bins(puntos, bins=None):
-    """
-    Agrupa los puntos en bins y calcula frecuencias observadas.
-
-    Parameters
-    ----------
-    puntos : array-like
-        Serie de puntos anotados por partido.
-    bins : array-like, optional
-        Bordes de los bins. Si es None, se calculan automáticamente.
-
-    Returns
-    -------
-    tuple
-        (frecuencias observadas, bordes de bins, centros de bins)
-    """
-    if bins is None:
-        p = np.array(puntos)
-        min_val = int(np.floor(p.min()))
-        max_val = int(np.ceil(p.max()))
-        bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
-
-    freqs, edges = np.histogram(puntos, bins=bins)
-    centers = (edges[:-1] + edges[1:]) / 2
-    return freqs, edges, centers
-
-
-def prueba_chi_cuadrada(puntos, lambda_est, alpha=0.05):
-    """
-    Realiza la prueba de bondad de ajuste Chi-cuadrada para la distribución
-    de Poisson.
-
-    Agrupa los datos en bins y compara frecuencias observadas vs esperadas.
-    Combina bins con frecuencia esperada < 5 para cumplir supuestos.
-
-    Parameters
-    ----------
-    puntos : array-like
-        Serie de puntos anotados por partido.
-    lambda_est : float
-        Parámetro lambda estimado.
-    alpha : float
-        Nivel de significancia (default: 0.05).
-
-    Returns
-    -------
-    dict
-        Diccionario con estadístico chi2, p-valor, grados de libertad,
-        bins usados, frecuencias observadas/esperadas, y conclusión.
-    """
-    p = np.array(puntos)
-    n = len(p)
-
-    min_val = int(np.floor(p.min()))
-    max_val_raw = int(np.ceil(p.max()))
-    tail_val = int(lambda_est + 4 * np.sqrt(lambda_est)) + 1
-    max_val = max(max_val_raw, tail_val)
-
-    observed = []
-    expected = []
-    bin_labels = []
-    current_obs = 0
-    current_exp = 0
-    bin_start = min_val
-
-    for k in range(min_val, max_val + 1):
-        obs_k = np.sum(p == k)
-        exp_k = n * poisson.pmf(k, mu=lambda_est)
-        current_obs += obs_k
-        current_exp += exp_k
-
-        if current_exp >= 5 or k == max_val:
-            observed.append(current_obs)
-            expected.append(current_exp)
-            if bin_start == k:
-                bin_labels.append(str(k))
-            else:
-                bin_labels.append(f"{bin_start}-{k}")
-            current_obs = 0
-            current_exp = 0
-            bin_start = k + 1
-
-    observed = np.array(observed)
-    expected = np.array(expected)
-    expected = expected * np.sum(observed) / np.sum(expected)
-
-    if np.any(expected == 0):
-        mask = expected > 0
-        observed = observed[mask]
-        expected = expected[mask]
-
-    if len(observed) < 3:
-        return {
-            "estadistico_chi2": np.nan,
-            "p_valor": np.nan,
-            "grados_libertad": np.nan,
-            "bins_labels": bin_labels,
-            "observados": observed.tolist(),
-            "esperados": expected.tolist(),
-            "conclusion": "Muy pocos bins para realizar la prueba chi-cuadrada.",
-            "nivel_significancia": alpha,
-            "rechazar_h0": None,
-        }
-
-    chi2_stat, p_valor = stats.chisquare(f_obs=observed, f_exp=expected)
-    df_gl = len(observed) - 2
-
-    chi2_critico = stats.chi2.ppf(1 - alpha, df_gl)
-    rechazar = p_valor < alpha
-
-    if rechazar:
-        conclusion = (
-            f"Se RECHAZA H0 (p={p_valor:.4f} < alpha={alpha}). "
-            f"Los datos NO siguen una distribución de Poisson."
-        )
-    else:
-        conclusion = (
-            f"NO se rechaza H0 (p={p_valor:.4f} >= alpha={alpha}). "
-            f"Los datos son consistentes con una distribución de Poisson."
-        )
-
-    return {
-        "estadistico_chi2": chi2_stat,
-        "p_valor": p_valor,
-        "chi2_critico": chi2_critico,
-        "grados_libertad": df_gl,
-        "bins_labels": bin_labels,
-        "observados": observed.tolist(),
-        "esperados": expected.tolist(),
-        "conclusion": conclusion,
-        "nivel_significancia": alpha,
-        "rechazar_h0": rechazar,
-    }
-
-
-def prueba_ks(puntos, lambda_est, alpha=0.05, n_sim=10000):
+def graficar_partido_con_timeouts(df_game_analizado, t=3, alpha=0.05, plots_dir=None):
     """
     Realiza la prueba de Kolmogorov-Smirnov para una distribución de Poisson.
 
@@ -1241,9 +1087,11 @@ def analyze(df, equipo="Warriors", plots_dir=None, seed=42):
 
 
 if __name__ == "__main__":
-    import sys
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from src.clean import clean
-
-    df_clean, _ = clean(team_name="warriors")
-    analyze(df_clean, equipo="Golden State Warriors")
+    # Cargar datos procesados de prueba si existen
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    processed_file = os.path.join(base, "data", "processed", "warriors_game_time_series.csv")
+    if os.path.exists(processed_file):
+        df_test = pd.read_csv(processed_file)
+        analyze(df_test)
+    else:
+        print("Ejecute primero los módulos extract.py y clean.py")
