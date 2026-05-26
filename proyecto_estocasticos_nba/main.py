@@ -29,8 +29,6 @@ def parse_args():
     )
     parser.add_argument(
         "--team", type=str, default="warriors",
-        choices=["warriors", "lakers", "celtics", "bulls", "heat", "spurs",
-                 "nuggets", "bucks"],
         help="Equipo a analizar (default: warriors)"
     )
     parser.add_argument(
@@ -47,22 +45,48 @@ def main():
     args = parse_args()
 
     # Importación dinámica después del path insert
-    from src.extract import extract
+    from src.extract import TEAM_IDS, extract
     from src.clean import clean
     from src.analysis import analyze
 
     TEAM_NAMES = {
-        "warriors": "Golden State Warriors",
-        "lakers": "Los Angeles Lakers",
+        "hawks": "Atlanta Hawks",
         "celtics": "Boston Celtics",
+        "nets": "Brooklyn Nets",
+        "hornets": "Charlotte Hornets",
         "bulls": "Chicago Bulls",
-        "heat": "Miami Heat",
-        "spurs": "San Antonio Spurs",
+        "cavaliers": "Cleveland Cavaliers",
+        "mavericks": "Dallas Mavericks",
         "nuggets": "Denver Nuggets",
+        "pistons": "Detroit Pistons",
+        "warriors": "Golden State Warriors",
+        "rockets": "Houston Rockets",
+        "pacers": "Indiana Pacers",
+        "clippers": "Los Angeles Clippers",
+        "lakers": "Los Angeles Lakers",
+        "grizzlies": "Memphis Grizzlies",
+        "heat": "Miami Heat",
         "bucks": "Milwaukee Bucks",
+        "timberwolves": "Minnesota Timberwolves",
+        "pelicans": "New Orleans Pelicans",
+        "knicks": "New York Knicks",
+        "thunder": "Oklahoma City Thunder",
+        "magic": "Orlando Magic",
+        "76ers": "Philadelphia 76ers",
+        "suns": "Phoenix Suns",
+        "blazers": "Portland Trail Blazers",
+        "kings": "Sacramento Kings",
+        "spurs": "San Antonio Spurs",
+        "raptors": "Toronto Raptors",
+        "jazz": "Utah Jazz",
+        "wizards": "Washington Wizards",
     }
 
-    team_name = args.team
+    team_name = args.team.lower()
+    if team_name not in TEAM_IDS:
+        print(f"\n  [ERROR] El equipo '{args.team}' no es válido.")
+        print(f"  Equipos soportados: {', '.join(sorted(TEAM_IDS.keys()))}\n")
+        sys.exit(1)
     equipo_nombre = TEAM_NAMES.get(team_name, team_name.title())
 
     print(f"\n{'#'*60}")
