@@ -112,9 +112,30 @@ def clean_pbp_data(pbp_path, metadata_path, team_name="warriors"):
     
     return df_time_series
 
-def clean(raw_path=None, team_name="warriors", output_dir=None, project_root=None):
+def clean(raw_path=None, team_name="warriors", output_dir=None,
+          project_root=None, seasons=None):
     """
-    Función principal llamada desde el pipeline main.py.
+    Funcion principal del modulo de limpieza.
+    Ejecuta todo el pipeline de limpieza.
+
+    Parameters
+    ----------
+    raw_path : str, optional
+        Ruta al archivo CSV crudo. Si es None, se busca en data/raw/.
+    team_name : str
+        Nombre del equipo para localizar/guardar archivos.
+    output_dir : str, optional
+        Directorio donde guardar el CSV procesado.
+    project_root : str, optional
+        Directorio raiz del proyecto (para localizar el raw por defecto).
+    seasons : list, optional
+        Lista de temporadas en formato 'YYYY-YY' para filtrar los datos
+        crudos antes de limpiar.
+
+    Returns
+    -------
+    tuple
+        (DataFrame limpio, ruta del archivo guardado)
     """
     print(f"\n{'='*60}")
     print(f"  LIMPIEZA Y PROCESAMIENTO PLAY-BY-PLAY")
@@ -135,13 +156,32 @@ def clean(raw_path=None, team_name="warriors", output_dir=None, project_root=Non
     
     if output_dir is None:
         output_dir = os.path.join(project_root, "data", "processed")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    clean_output_path = os.path.join(output_dir, f"{team_name}_game_time_series.csv")
-    df_clean.to_csv(clean_output_path, index=False)
-    print(f"\n  ¡Éxito! Serie temporal regular de puntos guardada en: {clean_output_path}")
-    
-    return df_clean, clean_output_path
+
+    df = cargar_datos_crudos(raw_path)
+
+    if seasons is not None:
+        season_col = None
+        for c in ["SEASON_YEAR", "season_year"]:
+            if c in df.columns:
+                season_col = c
+                break
+        if season_col:
+            mask = df[season_col].isin(seasons)
+            df = df[mask].copy()
+            print(f"  Filtrado a temporadas {seasons}: {len(df)} registros")
+        else:
+            print("  Columna SEASON_YEAR no encontrada, sin filtro por temporada.")
+
+    df = filtrar_columnas_relevantes(df)
+    df = renombrar(df)
+    df = limpiar_nulos(df)
+    df = filtrar_temporada_regular(df)
+    df = convertir_fecha(df)
+
+    filepath = guardar_datos_procesados(df, team_name=team_name,
+                                         processed_dir=output_dir)
+    return df, filepath
+
 
 if __name__ == "__main__":
     clean(team_name="warriors")
