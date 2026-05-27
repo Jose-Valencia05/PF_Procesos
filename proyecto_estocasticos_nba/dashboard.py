@@ -15,7 +15,12 @@ Uso:
 import os
 import sys
 import pandas as pd
+# pyrefly: ignore [missing-import]
 import streamlit as st
+import warnings
+
+# Ignorar advertencias menores de Matplotlib como la falta de glifos en ciertas fuentes
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
 # Insertar el root del proyecto en el path para asegurar la importación de src
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))

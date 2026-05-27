@@ -2,15 +2,37 @@
 
 Un framework modular en Python diseñado para auditar la dinámica de juego en la NBA en tiempo real. Utiliza la teoría de **Procesos Estocásticos de Poisson** aplicados a datos jugada a jugada (*Play-by-Play*) para identificar rachas de anotación del rival estadísticamente improbables y recomendar de forma óptima el momento exacto para pedir un tiempo fuera (*Timeout*) para "romper el momentum".
 
+El sistema está diseñado bajo el principio de **Separation of Concerns (SoC)**, dividiendo la interfaz gráfica reactiva (**Capa Prefrontal / Dashboard**) de las operaciones matemáticas pesadas (**Capa Subyacente / Motor Estocástico**).
+
 ---
 
-## 📌 1. Descripción del Proyecto y Contexto de Negocio
+## 🏗️ 1. Arquitectura y Topología del Sistema
 
-En el baloncesto profesional, en particular en la NBA, el **"momentum"** o racha de anotación es un factor psicológico y táctico crítico. Un equipo que entra en una racha anotadora (e.g., un parcial de 10-0 en 2 minutos) no solo acumula una ventaja en el marcador, sino que altera la confianza de los jugadores y la dinámica táctica del juego. 
+El diseño del software se fundamenta en un desacoplamiento estricto de responsabilidades. La lógica de negocio y cálculo matemático no tiene conocimiento del cliente que solicita los datos, mientras que la interfaz de visualización ignora las minucias del cálculo estocástico.
 
-Tradicionalmente, los entrenadores (*coaches*) piden tiempos fuera basándose en su intuición o cuando la racha ya ha causado un daño irreversible en el marcador. **NBA-Poisson-TimeOut** resuelve este problema mediante un enfoque cuantitativo riguroso:
-*   **Problema**: La toma de decisiones subjetiva e tardía al solicitar tiempos fuera.
-*   **Solución**: Modelar las anotaciones del rival como un **Proceso de Poisson Homogéneo** (el cual representa la hipótesis nula de flujo normal y constante de anotación). Cuando el número de puntos recibidos en una ventana móvil de $t$ minutos es sumamente improbable bajo esta hipótesis (p-valor $< 0.05$), el sistema detona una señal de alerta técnica (`🔥 TIMEOUT`) para enfriar el partido y reorganizar la estrategia defensiva.
+### A. La Capa de Función Ejecutiva (Corteza Prefrontal / Dashboard)
+El archivo `dashboard.py` actúa como el **hypervisor** del sistema. Implementa una **Topología Monolítica Reactiva** mediante Streamlit, imitando la reactividad de los árboles de estado basados en el **Virtual DOM**. Cuando el usuario modifica un slider (e.g. el umbral crítico $\alpha$ o la ventana $t$) en el panel de control, el estado se actualiza y la capa reactiva intercepta la interrupción de software, reinyectando los parámetros en el motor matemático subyacente y repintando la vista de forma inmediata sin necesidad de reiniciar la aplicación.
+
+### B. La Capa Autónoma (Tallo Cerebral / Motor Estocástico)
+La lógica pesada y los cálculos computacionales se encapsulan en el directorio `/src`:
+*   `extract.py` (**Extracción e I/O de Red**): Se comunica con la API de la NBA para obtener datos a nivel de jugada (*PBP V3*) con retrasos exponenciales adaptativos para evadir bloqueos de red (*Rate Limit*).
+*   `clean.py` (**Normalización y Vectorización**): Traduce el reloj ISO-8601 del partido en minutos de juego continuos e interpole los puntos anotados para crear una serie temporal regular.
+*   `analysis.py` (**Unidad Aritmética Lógica - ALU**): Contiene los algoritmos de la distribución acumulada de Poisson y la generación de gráficos.
+
+### C. Topología Lógica del Flujo de Datos
+
+```text
+[Interrupción del Usuario] ---> (dashboard.py / Capa Reactiva)
+      (Cambio de Sliders)             |
+                                      v
+                      +---------------------------------------+
+                      | 1. src.extract.extract(team, limit)   | -> (I/O Red API / Caché)
+                      | 2. src.clean.clean(team)              | -> (Normalización de Tiempos)
+                      | 3. src.analysis.detectar_time_outs()  | -> (Cálculo de Poisson)
+                      +---------------------------------------+
+                                      |
+[Renderizado Visual] <----------------+ (Retorno de DataFrames, Métricas y Gráficos)
+```
 
 ---
 
@@ -36,26 +58,27 @@ $$D = \frac{\text{Var}[X]}{E[X]}$$
 *   **$t = 3$ minutos ($D \approx 0.94 \approx 1$)**: Representa el **punto de equilibrio óptimo**. El índice está sumamente cercano a 1, lo que valida que el proceso se comporta de manera estrictamente Poissoniana en esta escala, filtrando el ruido corto pero reaccionando a tiempo.
 *   **$t \ge 5$ minutos ($D \approx 0.78 < 1$)**: Presenta **subdispersión**. A escalas largas, las anotaciones convergen a su media histórica (debido al carácter estacionario y los límites físicos del juego). Deportivamente, esperar 5 minutos para detectar una racha es **tácticamente inútil**, pues el oponente ya habrá consolidado su ventaja.
 
+*Nota: El dashboard interactivo calcula estos índices en tiempo real para el equipo seleccionado y sugiere dinámicamente al usuario la ventana de tiempo que mejor se ajusta a la equidispersión.*
+
 ### C. Lógica de Decisión del Timeout (p-valor)
-Si el rival anota $k$ puntos en una ventana de $t=3$ minutos finalizando en el minuto $m$, calculamos la probabilidad acumulada de la cola derecha (la probabilidad de observar una racha de $k$ o más puntos bajo condiciones normales de juego):
+Si el rival anota $k$ puntos en una ventana de $t$ minutos finalizando en el minuto $m$, calculamos la probabilidad acumulada de la cola derecha (la probabilidad de observar una racha de $k$ o más puntos bajo condiciones normales de juego):
 
 $$p\text{-valor} = P(X \ge k) = 1 - P(X \le k - 1) = 1 - \sum_{i=0}^{k-1} \frac{e^{-\lambda_t} \lambda_t^i}{i!}$$
 
-Fijamos un nivel de significancia de **$\alpha = 0.05$**. Si:
-$$p\text{-valor} < 0.05$$
-Rechazamos $H_0$ (concluimos que la racha del oponente no es una fluctuación aleatoria común, sino un evento anómalo de alto rendimiento) y el algoritmo genera la señal de **`🔥 TIMEOUT`**.
+Fijamos un nivel de significancia de **$\alpha$** (configurable dinámicamente de $0.01$ a $0.10$ desde la interfaz). Si:
+$$p\text{-valor} < \alpha$$
+Rechazamos $H_0$ (concluimos que la racha del oponente no es una fluctuación aleatoria común, sino un evento de alta intensidad) y el algoritmo genera la señal de **`🔥 TIMEOUT`**.
 
-Para acoplarse a las restricciones reales del deporte, se incorpora un **cooldown técnico** de 4 minutos. Si se sugiere un tiempo fuera en el minuto $m$, no se podrá sugerir otro antes del minuto $m + 4$, evitando así la saturación de alertas en ventanas solapadas.
+Para acoplarse a las restricciones reales del deporte, se incorpora un **cooldown técnico** (configurable en el panel). Si se sugiere un tiempo fuera en el minuto $m$, no se podrá sugerir otro antes del minuto $m + m_{\text{cooldown}}$, evitando así la saturación de alertas en ventanas solapadas.
 
 ---
 
-## 🏗️ 3. Arquitectura del Pipeline y Módulos
-
-El proyecto está diseñado bajo una arquitectura modular limpia, lo que facilita el mantenimiento, la reproducibilidad y el escalado de datos:
+## 🏗️ 3. Estructura del Repositorio
 
 ```
 proyecto_estocasticos_nba/
-├── main.py                 # Orquestador y punto de entrada del pipeline
+├── dashboard.py            # Hypervisor de control reactivo (Streamlit)
+├── main.py                 # Orquestador alternativo de consola (CLI)
 ├── requirements.txt        # Dependencias del sistema
 ├── src/
 │   ├── extract.py          # Extracción y rate limiting con nba_api (PBP V3)
@@ -65,13 +88,8 @@ proyecto_estocasticos_nba/
 │   ├── raw/                # Archivos CSV crudos descargados de la API
 │   └── processed/          # Series temporales limpias por minuto y resumen final
 └── plots/
-    └── timeout_analysis.png # Visualización premium de los tiempos fuera
+    └── timeout_analysis.png # Visualización del partido showcase seleccionado
 ```
-
-*   **`main.py`**: El orquestador central que secuencia la ejecución de las fases, acepta argumentos por consola (e.g., cambiar de equipo o número de partidos) y administra la persistencia de las métricas clave.
-*   **`src/extract.py`**: Implementa la descarga de datos desde `nba_api` utilizando el endpoint moderno `PlayByPlayV3` (necesario para la temporada 2024-25). Cuenta con un sistema adaptativo de **exponential backoff** para mitigar bloqueos por Rate Limit.
-*   **`src/clean.py`**: Transforma la línea de tiempo irregular del play-by-play en una serie temporal uniforme de intervalos regulares de 1 minuto (1 a 48+). Traduce el reloj ISO-8601 (`PTMMMSS.00S`) a minutos transcurridos continuos y mapea la localía del equipo a partir del `MATCHUP`.
-*   **`src/analysis.py`**: Realiza los cálculos matemáticos de Poisson. Analiza la variabilidad de las ventanas temporales, ejecuta el algoritmo de timeouts con cooldown e implementa la visualización gráfica premium en `matplotlib`.
 
 ---
 
@@ -79,64 +97,46 @@ proyecto_estocasticos_nba/
 
 ### Requisitos Previos
 *   Python 3.10 o superior instalado.
-*   Conexión a internet (para la primera extracción de datos de NBA.com).
+*   Conexión a internet (para la primera extracción de datos de la API).
 
 ### Instalación de Dependencias
-Clona el repositorio e instala los paquetes requeridos usando:
+Instala los paquetes requeridos usando:
 ```bash
 pip install -r requirements.txt
 ```
+*(Nota: Si detectas que falta Streamlit en tu entorno, instálalo manualmente con `pip install streamlit`)*.
 
-### Modos de Ejecución
+### Ejecución del Dashboard (Interfaz Principal)
+Para inicializar la corteza prefrontal reactiva del sistema y levantar el servidor web local:
+```bash
+streamlit run dashboard.py
+```
+El hypervisor abrirá automáticamente una pestaña en tu navegador en `http://localhost:8501`.
 
-1.  **Ejecución Completa (Descarga y Procesa)**:
-    Descarga los datos jugada a jugada para los últimos 5 partidos de los *Golden State Warriors* de la temporada 24-25 y ejecuta el modelado:
-    ```bash
-    python main.py --team warriors --limit-games 5
-    ```
-
-2.  **Ejecución Rápida Local (Omitiendo la API)**:
-    Si ya has descargado los datos en `data/raw/` y solo deseas ajustar parámetros o regenerar los gráficos de forma instantánea:
-    ```bash
-    python main.py --skip-extract
-    ```
-
-3.  **Ejecución para otros equipos admitidos**:
-    El sistema soporta equipos clave configurados mediante su ID oficial de la NBA:
-    ```bash
-    python main.py --team lakers --limit-games 3
-    ```
-    *Equipos soportados por defecto: `warriors`, `lakers`, `celtics`, `bulls`, `heat`, `spurs`, `nuggets`, `bucks`.*
+### Parámetros Configurables en Tiempo Real:
+Desde la barra lateral del Dashboard, el usuario puede manipular los siguientes vectores de entrada del sistema sin tocar una sola línea de código:
+*   **Selección de Equipo**: Selector dinámico para cualquiera de las **30 franquicias de la NBA** (usando sus IDs oficiales).
+*   **Límite de Partidos**: Cantidad de juegos históricos recientes a evaluar (1 a 15).
+*   **Filtro de Red (Checkbox de Caché)**: Permite elegir entre forzar descargas directas de NBA.com o utilizar la caché local de CSVs en `data/raw/` para evitar límites de tráfico de API.
+*   **Ventana Móvil ($t$)**: Ajuste dinámico de 2 a 5 minutos.
+*   **Umbral Crítico ($\alpha$)**: Ajuste del p-valor límite de $0.01$ a $0.10$.
+*   **Cooldown Técnico**: Lapso en minutos de separación obligatoria entre alertas.
 
 ---
 
-## 📊 5. Interpretación de Resultados
+## 📊 5. Interpretación de Resultados en el Dashboard
 
-Al finalizar el pipeline, el programa genera dos salidas principales de alto valor analítico:
+El Dashboard reactivo organiza los resultados calculados por el motor estocástico en cuatro secciones funcionales:
 
-### A. Reporte CSV Consolidado (`data/processed/[equipo]_resumen_timeouts.csv`)
-Conserva un registro estructurado con el resumen global de la auditoría estocástica para los partidos evaluados:
-*   `lambda_minuto_base`: Tasa histórica de puntos recibidos por minuto.
-*   `partido_showcase`: ID del partido seleccionado dinámicamente para la visualización.
-*   `timeouts_sugeridos`: Total de solicitudes detonadas por el algoritmo en el partido.
-*   `max_racha_rival`: La racha máxima de puntos anotada por el rival en cualquier ventana de 3 minutos.
-
-### B. Visualización Gráfica (`plots/timeout_analysis.png`)
-Esta gráfica premium representa la evolución temporal del partido y los hitos del modelo estocástico:
-
-![Análisis de Tiempos Fuera](plots/timeout_analysis.png)
-
-**Cómo leer la gráfica:**
-1.  **Curva Azul (Nuestro Equipo)** vs **Curva Naranja (Oponente)**: Representan la acumulación total de puntos a lo largo de los 48 minutos de juego regular.
-2.  **Líneas Verticales Rojas Punteadas**: Indican el minuto exacto donde la pendiente de la curva del rival incrementó de forma anómala (racha), superando el umbral de significancia.
-3.  **Indicadores `🔥 TIMEOUT`**: Ubicados en los momentos donde el p-valor de Poisson cayó por debajo de $0.05$. El entrenador debió solicitar el tiempo fuera en ese preciso instante para neutralizar tácticamente el momentum defensivo antes de que el marcador se distanciara.
-4.  **Divisores Punteados Grises**: Marcan el fin de cada cuarto (12 min, 24 min, 36 min), permitiendo contextualizar el momento del partido (e.g., cierres de cuarto o momentos clutch en el último periodo).
-
----
-
-## 🛠️ 6. Auditoría de Ingeniería y Control de Calidad
-
-El sistema ha sido auditado de acuerdo con los más rigurosos estándares de la ingeniería de datos:
-1.  **Consistencia de Tiempos Lógicos**: El parseador traduce con precisión el reloj ISO-8601 del baloncesto al tiempo neto de juego continuo. El agrupamiento temporal (*minute binning*) con interpolación hacia adelante (*forward fill*) garantiza que no haya saltos vacíos en el proceso estocástico durante pausas de juego real.
-2.  **Rigor de Probabilidad Discreta**: Para calcular la probabilidad acumulada de la cola derecha de una variable discreta, se aplica estrictamente $P(X \ge k) = 1 - \text{cdf}(k - 1)$. Esto previene el error clásico de frontera de subestimar el p-valor al incluir incorrectamente el punto crítico en la distribución acumulada.
-3.  **Prevención de Bloqueos de API**: La integración de reintentos con retraso exponencial adaptativo (*exponential backoff*) y sleep adaptativo permite la descarga masiva sin disparar los limitadores de tráfico de los servidores de la NBA.
+1.  **Métricas Clave (KPI Cards)**:
+    *   **Tasa Base Rival (λ)**: Puntos promedio que nuestro equipo concede al oponente por cada minuto de juego.
+    *   **Tiempos Fuera Sugeridos**: Total de alertas `🔥 TIMEOUT` detectadas en el encuentro.
+    *   **Max Racha del Rival**: Cantidad máxima de puntos anotados por el oponente en el tamaño de ventana móvil actual.
+2.  **Visualización Táctica (Pestaña 1)**:
+    Muestra de forma gráfica la puntuación acumulada. Las líneas verticales rojas punteadas indican el momento exacto en el que el *coach* debió presionar el botón de tiempo fuera para cortar la racha estadística del oponente.
+3.  **Registro de Tiempos Críticos (Pestaña 2)**:
+    Aísla las alertas del partido en una tabla, mostrando el minuto y el p-valor exacto con 5 decimales de precisión, acompañado de tarjetas de advertencia de alta prioridad visual.
+4.  **Auditoría Matemática (Pestaña 3)**:
+    Permite visualizar la tabla comparativa de equidispersión y te sugiere de manera dinámica cuál es la ventana temporal óptima para ese equipo de acuerdo con los datos de su temporada regular.
+5.  **Línea de Tiempo Completa (Pestaña 4)**:
+    Permite auditar paso a paso el historial bruto de puntuaciones del partido resampleado en intervalos regulares de un minuto.
