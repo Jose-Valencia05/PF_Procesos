@@ -47,11 +47,24 @@ st.markdown("""
         background-color: #fafafa;
     }
     .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #f0f0f0;
+        background-color: #ffffff !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+    /* Forzar colores de texto oscuros de alto contraste en las tarjetas métricas */
+    .stMetric [data-testid="stMetricLabel"] {
+        color: #475569 !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #1e293b !important;
+        font-weight: 700 !important;
+        font-size: 1.8rem !important;
     }
     .highlight-card {
         background-color: #fff8f8;
@@ -224,7 +237,7 @@ if ejecutar or data_loaded:
         # TAB 1: VISUALIZACIÓN TÁCTICA
         with tab1:
             st.subheader("Análisis Dinámico de Curvas de Puntuación")
-            st.image(plot_path, use_column_width=True)
+            st.image(plot_path, use_container_width=True)
             st.info("💡 **Cómo leer este gráfico**: La línea naranja muestra la puntuación del rival. Las líneas verticales rojas marcan el instante preciso en el que el modelo Poisson de cola derecha detecta que la racha del oponente tiene una probabilidad menor a tu umbral crítico seleccionado (se rechaza la hipótesis nula). El entrenador debió pedir el tiempo fuera ahí.")
             
         # TAB 2: REGISTRO DE TIEMPOS CRÍTICOS
